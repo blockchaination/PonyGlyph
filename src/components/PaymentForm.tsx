@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   PaymentElement,
   useStripe,
@@ -7,7 +7,19 @@ import {
 } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+// Initialize Stripe outside of component to prevent multiple instances
+let stripePromise: Promise<any> | null = null;
+
+const getStripe = () => {
+  if (!stripePromise) {
+    const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+    if (!key) {
+      throw new Error('Stripe publishable key is missing');
+    }
+    stripePromise = loadStripe(key);
+  }
+  return stripePromise;
+};
 
 interface PaymentFormProps {
   clientSecret: string;
@@ -21,10 +33,18 @@ function PaymentFormContent({ onSuccess, onError }: Omit<PaymentFormProps, 'clie
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!stripe) {
+      console.warn('Stripe.js has not loaded yet. Please wait...');
+    }
+  }, [stripe]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!stripe || !elements) {
+      console.error('Stripe has not initialized yet');
+      setError('Payment system is not ready. Please try again in a moment.');
       return;
     }
 
@@ -41,12 +61,14 @@ function PaymentFormContent({ onSuccess, onError }: Omit<PaymentFormProps, 'clie
       });
 
       if (paymentError) {
+        console.error('Payment error:', paymentError);
         setError(paymentError.message || 'An error occurred during payment');
         onError(paymentError.message || 'An error occurred during payment');
       } else if (paymentIntent && paymentIntent.status === 'succeeded') {
         onSuccess();
       }
     } catch (err) {
+      console.error('Payment submission error:', err);
       setError('An unexpected error occurred');
       onError('An unexpected error occurred');
     } finally {
@@ -73,7 +95,7 @@ function PaymentFormContent({ onSuccess, onError }: Omit<PaymentFormProps, 'clie
 
 export function PaymentForm({ clientSecret, onSuccess, onError }: PaymentFormProps) {
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret }}>
+    <Elements stripe={getStripe()} options={{ clientSecret }}>
       <PaymentFormContent onSuccess={onSuccess} onError={onError} />
     </Elements>
   );
